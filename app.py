@@ -18,6 +18,7 @@ from automation_engine import (
     get_profile_dir,
     resolve_account_proxy,
     parse_proxy_string,
+    find_chrome_path,
     CHROME_PATH,
     BASE_DIR,
     SCREENSHOTS_DIR,
@@ -48,6 +49,7 @@ def load_config() -> Dict[str, Any]:
 
 
 def save_config(cfg: Dict[str, Any]):
+    os.makedirs(os.path.dirname(CONFIG_PATH), exist_ok=True)
     with open(CONFIG_PATH, "w", encoding="utf-8") as f:
         json.dump(cfg, f, ensure_ascii=False, indent=2)
 
@@ -484,8 +486,13 @@ async def open_browser_manual(req: AccountActionReq):
     resolved_proxy = resolve_account_proxy(target_acc, target_region, proxy_template)
     parsed_proxy = parse_proxy_string(resolved_proxy)
 
+    try:
+        chrome_bin = find_chrome_path(raise_if_missing=True)
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
     chrome_args = [
-        CHROME_PATH,
+        chrome_bin,
         f"--user-data-dir={user_data_dir}",
         "--no-first-run",
         "--no-default-browser-check",
@@ -518,10 +525,14 @@ async def open_browser_manual(req: AccountActionReq):
             "https://play.google.com/store/account/orderhistory?hl=zh-CN",
         ]
     )
-    _launch_on_interactive_desktop(chrome_args)
-    append_log(
-        f"[{time.strftime('%H:%M:%S')}] [BROWSER] 🌐 已为您手动打开 [{target_acc['id']}] ({target_acc['email']}) 的专属 Chrome 窗口"
-    )
+    try:
+        _launch_on_interactive_desktop(chrome_args)
+        append_log(
+            f"[{time.strftime('%H:%M:%S')}] [BROWSER] 🌐 已为您手动打开 [{target_acc['id']}] ({target_acc['email']}) 的专属 Chrome 窗口"
+        )
+    except Exception as e:
+        append_log(f"[{time.strftime('%H:%M:%S')}] [BROWSER] ❌ 打开浏览器窗口失败: {e}")
+        raise HTTPException(status_code=500, detail=f"无法启动浏览器窗口: {e}")
     return {"ok": True}
 
 

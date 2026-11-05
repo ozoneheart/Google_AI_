@@ -1,31 +1,102 @@
 import asyncio
 import base64
+import glob
 import hashlib
 import hmac
 import json
 import os
 import re
+import shutil
 import socket
 import struct
 import subprocess
 import urllib.parse
 import time
-from typing import Callable, Dict, Any, Optional
+from typing import Callable, Dict, Any, Optional, List
 from playwright.async_api import async_playwright
 
-def _find_chrome_path() -> str:
-    candidates = [
-        r"C:\Program Files\Google\Chrome\Application\chrome.exe",
-        r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
-        os.path.expandvars(r"%LOCALAPPDATA%\Google\Chrome\Application\chrome.exe"),
-    ]
+def find_chrome_path(raise_if_missing: bool = True) -> str:
+    """
+    Discover Google Chrome or Chromium executable across Linux and Windows.
+    Order of preference:
+    1. Explicit CHROME_PATH environment variable (if set)
+    2. Platform-specific known installation paths
+    3. System PATH search via shutil.which
+    4. Playwright-installed Chromium binaries
+    """
+    env_path = os.environ.get("CHROME_PATH", "").strip()
+    if env_path:
+        expanded = os.path.expanduser(os.path.expandvars(env_path))
+        if os.path.isfile(expanded) and (os.name == "nt" or os.access(expanded, os.X_OK)):
+            return os.path.abspath(expanded)
+        if os.path.exists(expanded):
+            return os.path.abspath(expanded)
+        if raise_if_missing:
+            raise FileNotFoundError(
+                f"Configured CHROME_PATH does not exist or is not an executable file: {env_path}"
+            )
+        return env_path
+
+    candidates: List[str] = []
+    if os.name == "nt":
+        candidates = [
+            r"C:\Program Files\Google\Chrome\Application\chrome.exe",
+            r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
+            os.path.expandvars(r"%LOCALAPPDATA%\Google\Chrome\Application\chrome.exe"),
+            os.path.expandvars(r"%PROGRAMFILES%\Google\Chrome\Application\chrome.exe"),
+            os.path.expandvars(r"%PROGRAMFILES(X86)%\Google\Chrome\Application\chrome.exe"),
+        ]
+        for name in ("chrome.exe", "chrome", "google-chrome"):
+            w = shutil.which(name)
+            if w and w not in candidates:
+                candidates.append(w)
+    else:
+        # Common Linux / Unix locations
+        candidates = [
+            "/usr/bin/google-chrome",
+            "/usr/bin/google-chrome-stable",
+            "/usr/bin/chromium",
+            "/usr/bin/chromium-browser",
+            "/snap/bin/chromium",
+            "/usr/bin/google-chrome-unstable",
+            "/usr/bin/google-chrome-beta",
+        ]
+        for name in ("google-chrome", "google-chrome-stable", "chromium", "chromium-browser", "chrome"):
+            w = shutil.which(name)
+            if w and w not in candidates:
+                candidates.append(w)
+
+        # Check Playwright-installed chromium binaries if any
+        pw_patterns = [
+            os.path.expanduser("~/.cache/ms-playwright/chromium-*/chrome-linux/chrome"),
+            os.path.expanduser("~/.cache/ms-playwright/chromium_headless_shell-*/chrome-linux/headless_shell"),
+        ]
+        for pattern in pw_patterns:
+            for match in sorted(glob.glob(pattern), reverse=True):
+                if match not in candidates:
+                    candidates.append(match)
+
     for p in candidates:
-        if os.path.exists(p):
-            return p
-    return candidates[0]
+        if p and os.path.isfile(p) and (os.name == "nt" or os.access(p, os.X_OK)):
+            return os.path.abspath(p)
+
+    if raise_if_missing:
+        raise FileNotFoundError(
+            "No Google Chrome or Chromium executable found.\n"
+            "Please ensure Google Chrome or Chromium is installed:\n"
+            "  - Linux: sudo apt update && sudo apt install -y google-chrome-stable (or chromium-browser)\n"
+            "  - Playwright browser: python -m playwright install chromium\n"
+            "  - Or set the CHROME_PATH environment variable: export CHROME_PATH=/path/to/chrome"
+        )
+    return ""
 
 
-CHROME_PATH = _find_chrome_path()
+_find_chrome_path = find_chrome_path
+
+try:
+    CHROME_PATH = find_chrome_path(raise_if_missing=False)
+except Exception:
+    CHROME_PATH = ""
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 PROFILES_DIR = os.path.join(BASE_DIR, "profiles")
 SCREENSHOTS_DIR = os.path.join(BASE_DIR, "screenshots")
@@ -524,6 +595,7 @@ class GoogleUltraAutomator:
 
     async def save_screenshot(self, page, step_tag: str) -> str:
         fname = f"{self.account['id']}_{step_tag}_{int(time.time())}.png"
+        os.makedirs(SCREENSHOTS_DIR, exist_ok=True)
         fpath = os.path.join(SCREENSHOTS_DIR, fname)
         try:
             await page.screenshot(path=fpath)
@@ -1319,7 +1391,7 @@ class GoogleUltraAutomator:
                         if await cvc_inp.count() == 0 and ("CVC" in f2_txt or "安全码" in f2_txt or "security code" in f2_txt.lower()):
                             cvc_inp = f2.locator('input[type="tel"], input[type="password"]')
                         if await cvc_inp.count() > 0 and await cvc_inp.first.is_visible():
-                            self.log(f"检测到银行卡安全码 (CVC) 验证框，自动填入 CVC: {cvc_code}")
+                            self.log("检测到银行卡安全码 (CVC) 验证框，自动填入 CVC: ***")
                             await cvc_inp.first.fill(cvc_code)
                             await asyncio.sleep(0.5)
                             vbtns = f2.locator(
@@ -1705,8 +1777,16 @@ class GoogleUltraAutomator:
         resolved_proxy = resolve_account_proxy(self.account, self.target_region, self.proxy_template)
         parsed_proxy = parse_proxy_string(resolved_proxy)
 
+        try:
+            chrome_bin = find_chrome_path(raise_if_missing=True)
+        except FileNotFoundError as e:
+            err_msg = str(e)
+            self.log(f"❌ 浏览器未找到: {err_msg}")
+            self.update_state(status="error", step_message="❌ 未检测到 Chrome/Chromium 浏览器")
+            return
+
         chrome_args = [
-            CHROME_PATH,
+            chrome_bin,
             f"--remote-debugging-port={self.port}",
             f"--user-data-dir={user_data_dir}",
             "--no-first-run",
@@ -1721,6 +1801,9 @@ class GoogleUltraAutomator:
             "--enforce-webrtc-ip-permission-check",
             "--start-maximized",
         ]
+
+        if os.environ.get("HEADLESS", "").lower() in ("1", "true", "yes") or os.environ.get("CHROME_HEADLESS", "").lower() in ("1", "true", "yes"):
+            chrome_args.append("--headless=new")
 
         if parsed_proxy:
             if parsed_proxy.get("username"):
@@ -1742,11 +1825,18 @@ class GoogleUltraAutomator:
 
         # Cleanly kill any lingering process listening on self.port
         try:
-            net_out = subprocess.check_output(f"netstat -ano | findstr :{self.port}", shell=True).decode("gbk", errors="ignore")
-            for line in net_out.splitlines():
-                if "LISTENING" in line:
-                    old_pid = line.strip().split()[-1]
-                    subprocess.run(f"taskkill /F /T /PID {old_pid}", shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            if os.name == "nt":
+                net_out = subprocess.check_output(f"netstat -ano | findstr :{self.port}", shell=True).decode("gbk", errors="ignore")
+                for line in net_out.splitlines():
+                    if "LISTENING" in line:
+                        old_pid = line.strip().split()[-1]
+                        subprocess.run(f"taskkill /F /T /PID {old_pid}", shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            else:
+                if is_port_open(self.port):
+                    try:
+                        subprocess.run(["fuser", "-k", f"{self.port}/tcp"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                    except Exception:
+                        pass
         except Exception:
             pass
         await asyncio.sleep(0.8)
@@ -1789,6 +1879,13 @@ class GoogleUltraAutomator:
                 await self.proxy_bridge.stop()
             if self.proc:
                 try:
-                    subprocess.run(f"taskkill /F /T /PID {self.proc.pid}", shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                    if os.name == "nt":
+                        subprocess.run(f"taskkill /F /T /PID {self.proc.pid}", shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                    else:
+                        self.proc.terminate()
+                        try:
+                            self.proc.wait(timeout=3)
+                        except subprocess.TimeoutExpired:
+                            self.proc.kill()
                 except Exception:
                     pass

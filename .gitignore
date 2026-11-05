@@ -1,0 +1,32 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Local browser runtime profiles and user data
+profiles/
+
+# Local screenshots produced by runs
+screenshots/*
+!screenshots/.gitkeep
+
+# Local environment and secret configs (preserving sample config.json)
+.env
+*.local.json
+
+# IDE and editor settings
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Operating system files
+.DS_Store
+Thumbs.db
