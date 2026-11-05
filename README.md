@@ -1,46 +1,115 @@
 ========================================================================
-  Google AI Pro (5 TB) 零成本两年 (US$0.00 -> 24个月) 全自动控制台
+  Google AI Pro (5 TB) 2-Year Zero-Cost Automated Console (US$0.00 -> 24 Months)
 ========================================================================
 
-【一、运行环境要求】
-1. Windows 10 / 11 系统
-2. 已安装 Google Chrome 浏览器（默认路径即可）
-3. 已安装 Python 3.10 或更高版本（安装时勾选 Add Python to PATH）
-4. 网络环境：本机开启美区（US）代理，或在控制台左侧填写代理模板
+## 1. Environment Requirements
 
-【二、快速启动步骤】
-1. 首次使用请双击运行：【1_首次运行_安装依赖并启动.bat】
-2. 之后日常使用直接双击：【2_启动控制台.bat】
-3. 浏览器会自动打开控制台页面：http://127.0.0.1:8765
+### Windows:
+1. Windows 10 / 11
+2. Google Chrome browser installed (default installation path is fine)
+3. Python 3.10 or higher installed (check "Add Python to PATH" during installation)
+4. Network: US proxy enabled on local machine, or configure a proxy template in the web console
 
-【三、自定义填写支付卡 & 跑号说明】
-1. 填写支付卡（必填）：
-   - 在网页左侧【全局配置与内联免税绑卡】区域，填入你自己的 Visa 或 Mastercard 外币卡：
-     * 卡号（16位数字）
-     * 有效期（月 / 年，如 08 / 29）
-     * 安全码（3位 CVC）
-     * 持卡人英文姓名
-     * 免税邮编默认已填好 97201（美国俄勒冈免税州），无需修改
-   - 填写后点击【💾 保存配置】。
-   - 注：脚本内置严格 0 元消费保护，仅在结账弹窗确认为 US$0.00 时才会点击订阅，全程 0 扣费。
+### Linux (Ubuntu / Debian / RHEL / Arch, etc.):
+1. Python 3.10 or higher with the `venv` module:
+   ```bash
+   sudo apt update && sudo apt install -y python3 python3-venv python3-pip
+   ```
+2. Google Chrome or Chromium browser:
+   ```bash
+   # Install Google Chrome Stable:
+   wget https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb
+   sudo dpkg -i google-chrome-stable_current_amd64.deb || sudo apt -f install -y
+   # Or install Chromium:
+   sudo apt install -y chromium-browser # or: sudo apt install -y chromium
+   ```
+3. Playwright browser dependencies (if using Playwright's bundled Chromium):
+   ```bash
+   python3 -m playwright install --with-deps chromium
+   ```
 
-2. 批量导入 Google 账号：
-   - 在网页右侧【批量放号导入区】粘贴账号（每行一个），支持以下任意格式：
-     * 邮箱----密码----辅助邮箱
-     * 邮箱----密码----辅助邮箱----2FA密钥
-     * 邮箱----密码----2FA密钥
-   - 点击【➕ 一键导入账号列表】。
+## 2. Quick Start
 
-3. 开始全自动执行：
-   - 点击单个账号右侧的【▶ 执行】或顶部的【▶ 批量全自动执行】。
-   - 脚本会自动完成：
-     Step 1: 自动登录 Google 并通过辅助邮箱 / 2FA 验证
-     Step 2: 内联免税绑卡 + 首层 12 个月免费包 (US$0.00)
-     Step 3: 叠加二层 6 个月免费包 (US$0.00 -> 18个月)
-     Step 4: 叠加三层 6 个月免费包 (US$0.00 -> 24个月封顶)
-     Step 5: 自动前往 Google Play 取消自动续订，锁死 2 年到期权益并截图验真
+### Windows:
+1. For first-time setup, double-click: `1_首次运行_安装依赖并启动.bat`
+2. For regular startup, double-click: `2_启动控制台.bat`
+3. The browser will automatically open the web console: http://127.0.0.1:8765
 
+### Linux:
+1. Make the launcher script executable and run it:
+   ```bash
+   chmod +x start_linux.sh
+   ./start_linux.sh
+   ```
+   The script will automatically create a virtual environment (`.venv`), install `requirements.txt` dependencies, detect Chrome/Chromium, and attempt to open the console at `http://127.0.0.1:8765` using `xdg-open` when a graphical desktop session is present.
 
-# 卡网：https://faka.cdkey.si
-# 博客：https://blog.caowo.de
-# TG群：@Hello_Florence
+2. Custom Browser Executable Path (Optional):
+   If Google Chrome or Chromium is installed at a non-standard location, specify it before running:
+   ```bash
+   export CHROME_PATH=/usr/bin/google-chrome-stable
+   ./start_linux.sh
+   ```
+
+3. Headless / VPS Server Execution:
+   - **Virtual Display (Recommended)**: Use `xvfb-run` to provide a virtual X display, preventing anti-bot detection triggered by standard headless browsers:
+     ```bash
+     sudo apt install -y xvfb
+     xvfb-run -a ./start_linux.sh
+     ```
+   - **Headless Mode**: If you prefer native Chrome headless mode, set `HEADLESS=1`:
+     ```bash
+     HEADLESS=1 ./start_linux.sh
+     ```
+   - **Accessing the Console Remotely**: The console binds locally to `127.0.0.1:8765` for security. When running on a remote headless server, use SSH port forwarding to access it securely from your local machine:
+     ```bash
+     ssh -L 8765:127.0.0.1:8765 user@your-server-ip
+     ```
+     Once connected, navigate to `http://127.0.0.1:8765` in your local browser.
+
+## 3. Configuration & Account Execution
+
+### 1. Payment Card Setup (Required):
+- In the left panel under **Global Configuration & Inline Tax-Free Card Binding**, enter your Visa or Mastercard:
+  * Card Number (16 digits)
+  * Expiration Date (Month / Year, e.g., 08 / 29)
+  * Security Code (3-digit CVC)
+  * Cardholder Name (English)
+  * Tax-free postal code is pre-filled with `97201` (Oregon tax-free state); no change required.
+- Click **💾 Save Configuration**.
+- *Note*: Built-in strict US$0.00 zero-cost verification ensures subscription is only clicked when the checkout dialog explicitly confirms US$0.00.
+
+### 2. Batch Import Google Accounts:
+- In the right panel under **Batch Import Accounts**, paste your accounts (one per line). Supported formats:
+  * `email----password----recovery_email`
+  * `email----password----recovery_email----2fa_secret`
+  * `email----password----2fa_secret`
+- Click **➕ Import Account List**.
+
+### 3. Automated Execution:
+- Click **▶ Run** on an individual account, or click **▶ Batch Run All** at the top.
+- The automation executes the following sequence:
+  - **Step 1**: Automatic Google login with recovery email and 2FA authentication handling.
+  - **Step 2**: Inline tax-free card binding + Layer 1 12-month free package (US$0.00).
+  - **Step 3**: Layer 2 6-month free package stacking (US$0.00 -> 18 months).
+  - **Step 4**: Layer 3 6-month free package stacking (US$0.00 -> 24 months cap).
+  - **Step 5**: Automatically navigate to Google Play subscriptions to cancel auto-renewal, lock in the 2-year expiration benefit, and capture verification screenshots.
+
+## 4. Security & Privacy Guidance
+
+1. **Credential Protection**:
+   - `config.json` stores your payment card details and account credentials locally. Never commit a `config.json` containing real card details, CVCs, passwords, or 2FA secrets to a public Git repository.
+   - On Linux / shared server environments, restrict file permissions:
+     ```bash
+     chmod 600 config.json
+     ```
+2. **Environment Isolation**:
+   - Browser profiles, cookies, and cache are isolated per account in the `profiles/` directory. Screenshots are saved to `screenshots/` directory. Both directories are ignored by `.gitignore`.
+3. **Network Security**:
+   - The web console binds exclusively to `127.0.0.1` by default. Do not expose it to `0.0.0.0` or public networks without authentication. Always use an SSH tunnel or a secured reverse proxy for remote access.
+
+---
+
+# Links & Community
+- Card Store: https://faka.cdkey.si
+- Blog: https://blog.caowo.de
+- Telegram Group: @Hello_Florence
