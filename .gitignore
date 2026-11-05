@@ -1,0 +1,7 @@
+# 本地敏感配置（真实卡号/账号密码），绝不提交
+config.json
+
+# 运行时产物
+__pycache__/
+profiles/
+screenshots/

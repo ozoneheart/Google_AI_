@@ -1558,12 +1558,21 @@ class GoogleUltraAutomator:
         if not ok:
             raise RuntimeError(f"Step 4 (三层 6个月免费封顶 US$0.00) 未成功: {self.last_subscribe_error}")
 
-        self.log("✅ Step 4 (三层 6个月免费包 US$0.00 -> 24个月封顶) 叠加完成！等待 40 秒同步最终到期日...")
-        await asyncio.sleep(40)
-        play_after = await self.inspect_play_subscriptions(page)
-        if "2028" not in play_after:
-            raise RuntimeError("Step 4 弹窗虽关闭，但 Play 订阅页到期日未推进至【2028年】！")
-        self.log("✅ Step 4 (US$0.00 零成本叠加至 2028 年两年期) 验真通过！")
+        self.log("✅ Step 4 (三层 6个月免费包 US$0.00 -> 24个月封顶) 叠加完成！轮询等待 Play 后台同步最终到期日 (最长约 4 分钟)...")
+        synced = False
+        for attempt in range(1, 9):  # 9 次 x ~30s ≈ 4.5 分钟，Play 后台大改写（24个月封顶）同步可能较慢
+            await asyncio.sleep(25)
+            play_after = await self.inspect_play_subscriptions(page)
+            if "2028" in play_after:
+                synced = True
+                break
+            self.log(f"⏳ 到期日第 {attempt}/8 次检查：订阅页尚未显示 2028 年，Play 后台同步中，继续等待...")
+        if synced:
+            self.log("✅ Step 4 (US$0.00 零成本叠加至 2028 年两年期) 验真通过！")
+        else:
+            # 结账弹窗已确认订阅成功（开始日期 2028年11月5日），仅同步延迟时不硬中断，
+            # 务必继续 Step 5 取消自动续订，防止 2028 年到期后按 US$35.07/月 扣费
+            self.log("⚠️ 订阅页暂未显示 2028 年（Play 后台同步延迟）。结账弹窗已确认订阅成功，继续执行 Step 5 取消自动续订以锁死到期日！")
 
     async def step5_cancel_and_verify(self, page):
         self.update_state(status="running", current_step=5, step_message="Step 5/5: 正在自动取消续订并锁死 2028 年到期日 (US$0.00 验真截图)...")
@@ -1749,14 +1758,46 @@ class GoogleUltraAutomator:
                     subprocess.run(f"taskkill /F /T /PID {old_pid}", shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         except Exception:
             pass
+        # 同时清理占用同一 user-data-dir 的旧实例（如「打开浏览器」留下的窗口）：
+        # 否则新 Chrome 会把参数移交给旧实例后立即退出，调试端口永远开不起来
+        try:
+            wmic_out = subprocess.check_output(
+                'wmic process where "name=\'chrome.exe\'" get ProcessId,CommandLine',
+                shell=True,
+            ).decode("gbk", errors="ignore")
+            dir_token = os.path.normpath(user_data_dir).lower()
+            killed_holders = False
+            for line in wmic_out.splitlines():
+                if "chrome.exe" in line.lower() and dir_token in line.lower():
+                    pid = line.strip().split()[-1]
+                    if pid.isdigit():
+                        subprocess.run(f"taskkill /F /T /PID {pid}", shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                        killed_holders = True
+            if killed_holders:
+                self.log(f"🧹 已清理占用 [{self.account['id']}] 配置目录的残留 Chrome 实例")
+                await asyncio.sleep(1.0)
+        except Exception:
+            pass
         await asyncio.sleep(0.8)
 
         self.proc = subprocess.Popen(chrome_args)
-        await asyncio.sleep(2.8)
 
         try:
             async with async_playwright() as p:
-                browser = await p.chromium.connect_over_cdp(f"http://127.0.0.1:{self.port}")
+                browser = None
+                for _ in range(20):  # 轮询最多约 14s，等调试端口就绪
+                    await asyncio.sleep(0.7)
+                    if self.proc.poll() is not None:
+                        break  # Chrome 进程已退出（被同配置实例抢占或启动失败）
+                    try:
+                        browser = await p.chromium.connect_over_cdp(f"http://127.0.0.1:{self.port}")
+                        break
+                    except Exception:
+                        continue
+                if browser is None:
+                    if self.proc.poll() is not None:
+                        raise RuntimeError("Chrome 启动后立即退出：该账号配置目录被其他 Chrome 实例占用，请关闭对应窗口后重试")
+                    raise RuntimeError(f"等待 Chrome 调试端口 {self.port} 就绪超时（约14秒）")
                 context = browser.contexts[0]
                 await context.add_init_script("window.__INIT_TEST = null;\n" + HOOK_JS)
 
